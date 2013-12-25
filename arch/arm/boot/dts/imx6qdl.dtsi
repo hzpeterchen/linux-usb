@@ -570,6 +570,18 @@
 				fsl,anatop = <&anatop>;
 			};
 
+			usbphy_nop1: usbphy_nop1 {
+				compatible = "usb-nop-xceiv";
+				clocks = <&clks 182>;
+				clock-names = "main_clk";
+			};
+
+			usbphy_nop2: usbphy_nop2 {
+				compatible = "usb-nop-xceiv";
+				clocks = <&clks 182>;
+				clock-names = "main_clk";
+			};
+
 			snvs@020cc000 {
 				compatible = "fsl,sec-v4.0-mon", "simple-bus";
 				#address-cells = <1>;
@@ -1435,6 +1447,9 @@
 				interrupts = <0 41 0x04>;
 				clocks = <&clks 162>;
 				fsl,usbmisc = <&usbmisc 2>;
+				phy_type = "hsic";
+				fsl,usbphy = <&usbphy_nop1>;
+				fsl,anatop = <&anatop>;
 				status = "disabled";
 			};
 
@@ -1444,6 +1459,9 @@
 				interrupts = <0 42 0x04>;
 				clocks = <&clks 162>;
 				fsl,usbmisc = <&usbmisc 3>;
+				phy_type = "hsic";
+				fsl,usbphy = <&usbphy_nop2>;
+				fsl,anatop = <&anatop>;
 				status = "disabled";
 			};
 
