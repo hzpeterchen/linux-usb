@@ -86,6 +86,11 @@ static int host_start(struct ci_hdrc *ci)
 	if (ci->platdata->flags & CI_HDRC_DISABLE_STREAMING)
 		hw_write(ci, OP_USBMODE, USBMODE_CI_SDIS, USBMODE_CI_SDIS);
 
+	if (ci->platdata->notify_event &&
+		(ci->platdata->flags & CI_HDRC_IMX_IS_HSIC))
+		ci->platdata->notify_event
+			(ci, CI_HDRC_IMX_HSIC_ACTIVE_EVENT);
+
 	return ret;
 
 disable_reg:

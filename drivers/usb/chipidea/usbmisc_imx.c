@@ -15,6 +15,7 @@
 #include <linux/err.h>
 #include <linux/io.h>
 #include <linux/delay.h>
+#include <linux/regmap.h>
 
 #include "ci_hdrc_imx.h"
 
@@ -33,6 +34,21 @@
 #define MX53_BM_OVER_CUR_DIS_UHx	BIT(30)
 
 #define MX6_BM_OVER_CUR_DIS		BIT(7)
+#define MX6_BM_UTMI_ON_CLOCK		BIT(13)
+
+#define MX6_USB_HSIC_CTRL_OFFSET	0x10
+/* Indicating whether HSIC clock is valid */
+#define MX6_BM_HSIC_CLK_VLD		BIT(31)
+/* set before portsc.suspendM = 1 */
+#define MX6_BM_HSIC_DEV_CONN		BIT(21)
+/* HSIC enable */
+#define MX6_BM_HSIC_EN			BIT(12)
+/* Force HSIC module 480M clock on, even when in Host is in suspend mode */
+#define MX6_BM_HSIC_CLK_ON		BIT(11)
+
+#define ANADIG_ANA_MISC0		0x150
+#define ANADIG_ANA_MISC0_SET		0x154
+#define ANADIG_ANA_MISC0_CLK_DELAY(x)	((x >> 26) & 0x7)
 
 struct usbmisc_ops {
 	/* It's called once when probe a usb device */
@@ -142,17 +158,41 @@ static int usbmisc_imx53_init(struct imx_usbmisc_data *data)
 static int usbmisc_imx6q_init(struct imx_usbmisc_data *data)
 {
 	unsigned long flags;
-	u32 reg;
+	u32 val;
 
 	if (data->index > 3)
 		return -EINVAL;
 
 	if (data->disable_oc) {
 		spin_lock_irqsave(&usbmisc->lock, flags);
-		reg = readl(usbmisc->base + data->index * 4);
-		writel(reg | MX6_BM_OVER_CUR_DIS,
+		val = readl(usbmisc->base + data->index * 4);
+		writel(val | MX6_BM_OVER_CUR_DIS,
 			usbmisc->base + data->index * 4);
 		spin_unlock_irqrestore(&usbmisc->lock, flags);
+	}
+
+	/* For HSIC controller */
+	if (data->index == 2 || data->index == 3) {
+		spin_lock_irqsave(&usbmisc->lock, flags);
+		val = readl(usbmisc->base + data->index * 4);
+		writel(val | MX6_BM_UTMI_ON_CLOCK,
+			usbmisc->base + data->index * 4);
+		val = readl(usbmisc->base + MX6_USB_HSIC_CTRL_OFFSET
+			+ (data->index - 2) * 4);
+		val |= MX6_BM_HSIC_EN | MX6_BM_HSIC_CLK_ON;
+		writel(val, usbmisc->base + MX6_USB_HSIC_CTRL_OFFSET
+			+ (data->index - 2) * 4);
+		spin_unlock_irqrestore(&usbmisc->lock, flags);
+
+		/*
+		 * Need to add delay to wait 24M OSC to be stable,
+		 * It is board specific.
+		 */
+		regmap_read(data->anatop, ANADIG_ANA_MISC0, &val);
+		/* 0 <= data->osc_clkgate_delay <= 7 */
+		if (data->osc_clkgate_delay > ANADIG_ANA_MISC0_CLK_DELAY(val))
+			regmap_write(data->anatop, ANADIG_ANA_MISC0_SET,
+				(data->osc_clkgate_delay) << 26);
 	}
 
 	return 0;

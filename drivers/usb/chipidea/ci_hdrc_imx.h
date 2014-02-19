@@ -17,6 +17,12 @@ struct imx_usbmisc_data {
 
 	unsigned int disable_oc:1; /* over current detect disabled */
 	unsigned int evdo:1; /* set external vbus divider option */
+	/*
+	 * Specifies the delay between powering up the xtal 24MHz clock
+	 * and release the clock to the digital logic inside the analog block
+	 */
+	unsigned int osc_clkgate_delay;
+	struct regmap *anatop;
 };
 
 int imx_usbmisc_init(struct imx_usbmisc_data *);

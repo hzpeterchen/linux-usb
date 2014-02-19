@@ -19,11 +19,14 @@
 #include <linux/dma-mapping.h>
 #include <linux/usb/chipidea.h>
 #include <linux/clk.h>
+#include <linux/regmap.h>
+#include <linux/mfd/syscon.h>
 
 #include "ci.h"
 #include "ci_hdrc_imx.h"
 
 #define CI_HDRC_IMX_IMX28_WRITE_FIX BIT(0)
+#define CI_HDRC_IMX_HAS_HSIC	BIT(1)
 
 struct ci_hdrc_imx_platform_flag {
 	unsigned int flags;
@@ -35,8 +38,17 @@ static const struct ci_hdrc_imx_platform_flag imx27_usb_data = {
 static const struct ci_hdrc_imx_platform_flag imx28_usb_data = {
 	.flags = CI_HDRC_IMX_IMX28_WRITE_FIX,
 };
+static const struct ci_hdrc_imx_platform_flag imx6q_usb_data = {
+	.flags = CI_HDRC_IMX_HAS_HSIC,
+};
+
+static const struct ci_hdrc_imx_platform_flag imx6sl_usb_data = {
+	.flags = CI_HDRC_IMX_HAS_HSIC,
+};
 
 static const struct of_device_id ci_hdrc_imx_dt_ids[] = {
+	{ .compatible = "fsl,imx6sl-usb", .data = &imx6sl_usb_data},
+	{ .compatible = "fsl,imx6q-usb", .data = &imx6q_usb_data},
 	{ .compatible = "fsl,imx28-usb", .data = &imx28_usb_data},
 	{ .compatible = "fsl,imx27-usb", .data = &imx27_usb_data},
 	{ /* sentinel */ }
@@ -48,6 +60,9 @@ struct ci_hdrc_imx_data {
 	struct platform_device *ci_pdev;
 	struct clk *clk;
 	struct imx_usbmisc_data *usbmisc_data;
+	struct regmap *anatop;
+	struct pinctrl *pinctrl;
+	struct pinctrl_state *pinctrl_hsic_active;
 };
 
 /* Common functions shared by usbmisc drivers */
@@ -87,10 +102,53 @@ static struct imx_usbmisc_data *usbmisc_get_init_data(struct device *dev)
 	if (of_find_property(np, "external-vbus-divider", NULL))
 		data->evdo = 1;
 
+	if (of_find_property(np, "osc-clkgate-delay", NULL)) {
+		ret = of_property_read_u32(np, "osc-clkgate-delay",
+			&data->osc_clkgate_delay);
+		if (ret) {
+			dev_err(dev,
+				"failed to get osc-clkgate-delay value\n");
+			return ERR_PTR(ret);
+		}
+		/*
+		 * 0 <= osc_clkgate_delay <=7
+		 * - 0x0 (default) is 0.5ms,
+		 * - 0x1-0x7: 1-7ms
+		 */
+		if (data->osc_clkgate_delay > 7) {
+			dev_err(dev,
+				"value of osc-clkgate-delay is incorrect\n");
+			return ERR_PTR(-EINVAL);
+		}
+	}
+
 	return data;
 }
 
 /* End of common functions shared by usbmisc drivers*/
+
+static void ci_hdrc_imx_notify_event(struct ci_hdrc *ci, unsigned event)
+{
+	struct device *dev = ci->dev->parent;
+	struct ci_hdrc_imx_data *data = dev_get_drvdata(dev);
+	int ret;
+
+	switch (event) {
+	case CI_HDRC_IMX_HSIC_ACTIVE_EVENT:
+		if (!IS_ERR(data->pinctrl) &&
+			!IS_ERR(data->pinctrl_hsic_active)) {
+			ret = pinctrl_select_state(data->pinctrl
+				, data->pinctrl_hsic_active);
+			if (ret)
+				dev_err(dev,
+					 "hsic_active select failed, err=%d\n",
+					 ret);
+		}
+		break;
+	default:
+		dev_dbg(dev, "unknown event\n");
+	}
+}
 
 static int ci_hdrc_imx_probe(struct platform_device *pdev)
 {
@@ -100,11 +158,14 @@ static int ci_hdrc_imx_probe(struct platform_device *pdev)
 		.capoffset	= DEF_CAPOFFSET,
 		.flags		= CI_HDRC_REQUIRE_TRANSCEIVER |
 				  CI_HDRC_DISABLE_STREAMING,
+		.notify_event = ci_hdrc_imx_notify_event,
 	};
 	int ret;
 	const struct of_device_id *of_id =
 			of_match_device(ci_hdrc_imx_dt_ids, &pdev->dev);
 	const struct ci_hdrc_imx_platform_flag *imx_platform_flag = of_id->data;
+	struct device_node *np = pdev->dev.of_node;
+	struct pinctrl_state *pinctrl_hsic_idle;
 
 	data = devm_kzalloc(&pdev->dev, sizeof(*data), GFP_KERNEL);
 	if (!data) {
@@ -112,9 +173,40 @@ static int ci_hdrc_imx_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 
+	platform_set_drvdata(pdev, data);
+
 	data->usbmisc_data = usbmisc_get_init_data(&pdev->dev);
 	if (IS_ERR(data->usbmisc_data))
 		return PTR_ERR(data->usbmisc_data);
+
+	data->pinctrl = devm_pinctrl_get(&pdev->dev);
+	if (IS_ERR(data->pinctrl)) {
+		dev_dbg(&pdev->dev, "pinctrl get failed, err=%ld\n",
+			PTR_ERR(data->pinctrl));
+	} else {
+		pinctrl_hsic_idle = pinctrl_lookup_state(data->pinctrl, "idle");
+		if (IS_ERR(pinctrl_hsic_idle)) {
+			dev_dbg(&pdev->dev,
+				 "pinctrl_hsic_idle lookup failed, err=%ld\n",
+				 PTR_ERR(pinctrl_hsic_idle));
+		} else {
+			ret = pinctrl_select_state(data->pinctrl,
+					pinctrl_hsic_idle);
+			if (ret) {
+				dev_err(&pdev->dev,
+					 "hsic_idle select failed, err=%d\n",
+					 ret);
+				return ret;
+			}
+		}
+
+		data->pinctrl_hsic_active = pinctrl_lookup_state
+			(data->pinctrl, "active");
+		if (IS_ERR(data->pinctrl_hsic_active))
+			dev_dbg(&pdev->dev,
+				 "pinctrl_hsic_active lookup failed, err=%ld\n",
+				 PTR_ERR(data->pinctrl_hsic_active));
+	}
 
 	data->clk = devm_clk_get(&pdev->dev, NULL);
 	if (IS_ERR(data->clk)) {
@@ -141,9 +233,26 @@ static int ci_hdrc_imx_probe(struct platform_device *pdev)
 	if (imx_platform_flag->flags & CI_HDRC_IMX_IMX28_WRITE_FIX)
 		pdata.flags |= CI_HDRC_IMX28_WRITE_FIX;
 
+	if (data->usbmisc_data && data->usbmisc_data->index > 1 &&
+		(imx_platform_flag->flags & CI_HDRC_IMX_HAS_HSIC))
+		pdata.flags |= CI_HDRC_IMX_IS_HSIC;
+
 	ret = dma_coerce_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
 	if (ret)
 		goto err_clk;
+
+	if (of_find_property(np, "fsl,anatop", NULL)) {
+		data->anatop = syscon_regmap_lookup_by_phandle
+			(np, "fsl,anatop");
+		if (IS_ERR(data->anatop)) {
+			dev_dbg(&pdev->dev,
+				"failed to find regmap for anatop\n");
+			ret = PTR_ERR(data->anatop);
+			goto err_clk;
+		}
+		if (data->usbmisc_data)
+			data->usbmisc_data->anatop = data->anatop;
+	}
 
 	if (data->usbmisc_data) {
 		ret = imx_usbmisc_init(data->usbmisc_data);
@@ -173,8 +282,6 @@ static int ci_hdrc_imx_probe(struct platform_device *pdev)
 			goto disable_device;
 		}
 	}
-
-	platform_set_drvdata(pdev, data);
 
 	pm_runtime_no_callbacks(&pdev->dev);
 	pm_runtime_enable(&pdev->dev);
