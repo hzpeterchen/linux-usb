@@ -463,6 +463,13 @@ int hw_device_reset(struct ci_hdrc *ci)
 	/* HW >= 2.3 */
 	hw_write(ci, OP_USBMODE, USBMODE_SLOM, USBMODE_SLOM);
 
+	/*
+	 * Set interrupt interval for device mode
+	 * host set ITC according to ehci-hcd module parameter log2_irq_thresh
+	 */
+	hw_write(ci, OP_USBCMD, 0xff0000,
+		ci->platdata->gadget_itc_setting << 16);
+
 	if (hw_read(ci, OP_USBMODE, USBMODE_CM) != USBMODE_CM_DC) {
 		pr_err("cannot enter in %s device mode", ci_role(ci)->name);
 		pr_err("lpm = %i", ci->hw_bank.lpm);
@@ -560,6 +567,8 @@ static irqreturn_t ci_irq(int irq, void *data)
 static int ci_get_platdata(struct device *dev,
 		struct ci_hdrc_platform_data *platdata)
 {
+	int ret;
+
 	if (!platdata->phy_mode)
 		platdata->phy_mode = of_usb_get_phy_mode(dev->of_node);
 
@@ -590,6 +599,16 @@ static int ci_get_platdata(struct device *dev,
 
 	if (of_usb_get_maximum_speed(dev->of_node) == USB_SPEED_FULL)
 		platdata->flags |= CI_HDRC_FORCE_FULLSPEED;
+
+	if (of_find_property(dev->of_node, "gadget-itc-setting", NULL)) {
+		ret = of_property_read_u32(dev->of_node, "gadget-itc-setting",
+			&platdata->gadget_itc_setting);
+		if (ret) {
+			dev_err(dev,
+				"failed to get gadget-itc-setting value\n");
+			return ret;
+		}
+	}
 
 	return 0;
 }

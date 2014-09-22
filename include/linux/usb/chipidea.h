@@ -35,6 +35,8 @@ struct ci_hdrc_platform_data {
 	void	(*notify_event) (struct ci_hdrc *ci, unsigned event);
 	struct regulator	*reg_vbus;
 	bool			tpl_support;
+	/* interrupt threshold value for gadget */
+	u32			gadget_itc_setting;
 };
 
 /* Default offset of capability registers */
