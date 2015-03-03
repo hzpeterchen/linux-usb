@@ -381,10 +381,10 @@ static void mxsfb_disable_controller(struct fb_info *fb_info)
 	writel(reg & ~VDCTRL4_SYNC_SIGNALS_ON, host->base + LCDC_VDCTRL4);
 
 	clk_disable_unprepare(host->clk);
-	if (host->clk_disp_axi)
-		clk_disable_unprepare(host->clk_disp_axi);
-	if (host->clk_axi)
-		clk_disable_unprepare(host->clk_axi);
+//	if (host->clk_disp_axi)
+//		clk_disable_unprepare(host->clk_disp_axi);
+//	if (host->clk_axi)
+//		clk_disable_unprepare(host->clk_axi);
 
 	host->enabled = 0;
 
