@@ -20,6 +20,8 @@ Optional properties:
 - external-vbus-divider: enables off-chip resistor divider for Vbus
 - maximum-speed: limit the maximum connection speed to "full-speed".
 - tpl-support: TPL (Targeted Peripheral List) feature for targeted hosts
+- gadget-itc-setting: the ITC setting for gadget, the required value
+  should be aligned with ITC bits at register USBCMD.
 
 Examples:
 usb@02184000 { /* USB OTG */
@@ -32,4 +34,5 @@ usb@02184000 { /* USB OTG */
 	external-vbus-divider;
 	maximum-speed = "full-speed";
 	tpl-support;
+	gadget-itc-setting = <0x4>; /* 4 micro-frames */
 };
