@@ -403,6 +403,44 @@ static int ci_usb_phy_init(struct ci_hdrc *ci)
 	return ret;
 }
 
+
+/**
+ * ci_platform_config: do controller configure
+ * @ci: the controller
+ * @usb_mode: the usb mode
+ *
+ */
+void ci_platform_config(struct ci_hdrc *ci, int usb_mode)
+{
+	if (usb_mode == USBMODE_CM_DC) {
+		if (ci->platdata->flags & CI_HDRC_DISABLE_DEVICE_STREAMING)
+			hw_write(ci, OP_USBMODE, USBMODE_CI_SDIS,
+					USBMODE_CI_SDIS);
+
+		/*
+		 * Set interrupt interval for device mode
+		 * host set ITC according to ehci-hcd module
+		 * parameter log2_irq_thresh
+		 */
+		hw_write(ci, OP_USBCMD, 0xff0000,
+			ci->platdata->gadget_itc_setting << 16);
+	} else if (usb_mode == USBMODE_CM_HC) {
+		if (ci->platdata->flags & CI_HDRC_DISABLE_HOST_STREAMING)
+			hw_write(ci, OP_USBMODE, USBMODE_CI_SDIS,
+					USBMODE_CI_SDIS);
+	} else {
+		dev_warn(ci->dev, "USB mode in still not set\n");
+	}
+
+	if (ci->platdata->flags & CI_HDRC_FORCE_FULLSPEED) {
+		if (ci->hw_bank.lpm)
+			hw_write(ci, OP_DEVLC, DEVLC_PFSC, DEVLC_PFSC);
+		else
+			hw_write(ci, OP_PORTSC, PORTSC_PFSC, PORTSC_PFSC);
+	}
+
+}
+
 /**
  * hw_controller_reset: do controller reset
  * @ci: the controller
@@ -447,34 +485,19 @@ int hw_device_reset(struct ci_hdrc *ci)
 		ci->platdata->notify_event(ci,
 			CI_HDRC_CONTROLLER_RESET_EVENT);
 
-	if (ci->platdata->flags & CI_HDRC_DISABLE_DEVICE_STREAMING)
-		hw_write(ci, OP_USBMODE, USBMODE_CI_SDIS, USBMODE_CI_SDIS);
-
-	if (ci->platdata->flags & CI_HDRC_FORCE_FULLSPEED) {
-		if (ci->hw_bank.lpm)
-			hw_write(ci, OP_DEVLC, DEVLC_PFSC, DEVLC_PFSC);
-		else
-			hw_write(ci, OP_PORTSC, PORTSC_PFSC, PORTSC_PFSC);
-	}
-
 	/* USBMODE should be configured step by step */
 	hw_write(ci, OP_USBMODE, USBMODE_CM, USBMODE_CM_IDLE);
 	hw_write(ci, OP_USBMODE, USBMODE_CM, USBMODE_CM_DC);
 	/* HW >= 2.3 */
 	hw_write(ci, OP_USBMODE, USBMODE_SLOM, USBMODE_SLOM);
 
-	/*
-	 * Set interrupt interval for device mode
-	 * host set ITC according to ehci-hcd module parameter log2_irq_thresh
-	 */
-	hw_write(ci, OP_USBCMD, 0xff0000,
-		ci->platdata->gadget_itc_setting << 16);
-
 	if (hw_read(ci, OP_USBMODE, USBMODE_CM) != USBMODE_CM_DC) {
 		pr_err("cannot enter in %s device mode", ci_role(ci)->name);
 		pr_err("lpm = %i", ci->hw_bank.lpm);
 		return -ENODEV;
 	}
+
+	ci_platform_config(ci, USBMODE_CM_DC);
 
 	return 0;
 }
