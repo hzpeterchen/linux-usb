@@ -412,6 +412,8 @@ static int ci_usb_phy_init(struct ci_hdrc *ci)
  */
 void ci_platform_config(struct ci_hdrc *ci, int usb_mode)
 {
+	bool override_needed;
+
 	if (usb_mode == USBMODE_CM_DC) {
 		if (ci->platdata->flags & CI_HDRC_DISABLE_DEVICE_STREAMING)
 			hw_write(ci, OP_USBMODE, USBMODE_CI_SDIS,
@@ -439,6 +441,12 @@ void ci_platform_config(struct ci_hdrc *ci, int usb_mode)
 			hw_write(ci, OP_PORTSC, PORTSC_PFSC, PORTSC_PFSC);
 	}
 
+	/* Override AHB burst configuration if needed */
+	override_needed = hw_read_id_reg(ci, ID_SBUSCFG, AHBBRST_MASK) !=
+		(ci->platdata->ahbburst_config & AHBBRST_MASK);
+	if (override_needed)
+		hw_write_id_reg(ci, ID_SBUSCFG, AHBBRST_MASK,
+			ci->platdata->ahbburst_config);
 }
 
 /**
@@ -629,6 +637,16 @@ static int ci_get_platdata(struct device *dev,
 		if (ret) {
 			dev_err(dev,
 				"failed to get gadget-itc-setting value\n");
+			return ret;
+		}
+	}
+
+	if (of_find_property(dev->of_node, "ahb-burst-config", NULL)) {
+		ret = of_property_read_u32(dev->of_node, "ahb-burst-config",
+			&platdata->ahbburst_config);
+		if (ret) {
+			dev_err(dev,
+				"failed to get ahb-burst-config value\n");
 			return ret;
 		}
 	}

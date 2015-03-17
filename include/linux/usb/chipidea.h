@@ -32,6 +32,7 @@ struct ci_hdrc_platform_data {
 #define CI_HDRC_DISABLE_HOST_STREAMING		BIT(9)
 #define CI_HDRC_DISABLE_STREAMING (CI_HDRC_DISABLE_DEVICE_STREAMING |	\
 		CI_HDRC_DISABLE_HOST_STREAMING)
+#define CI_HDRC_OVERRIDE_AHB_BURST		BIT(10)
 	enum usb_dr_mode	dr_mode;
 #define CI_HDRC_CONTROLLER_RESET_EVENT		0
 #define CI_HDRC_CONTROLLER_STOPPED_EVENT	1
@@ -40,6 +41,7 @@ struct ci_hdrc_platform_data {
 	bool			tpl_support;
 	/* interrupt threshold value for gadget */
 	u32			gadget_itc_setting;
+	u32			ahbburst_config;
 };
 
 /* Default offset of capability registers */
