@@ -42,6 +42,8 @@ struct ci_hdrc_platform_data {
 	/* interrupt threshold value for gadget */
 	u32			gadget_itc_setting;
 	u32			ahbburst_config;
+	u32			tx_burst_size;
+	u32			rx_burst_size;
 };
 
 /* Default offset of capability registers */

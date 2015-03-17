@@ -84,6 +84,7 @@ static const u8 ci_regs_nolpm[] = {
 	[OP_USBINTR]		= 0x08U,
 	[OP_DEVICEADDR]		= 0x14U,
 	[OP_ENDPTLISTADDR]	= 0x18U,
+	[OP_BURSTSIZE]		= 0x20U,
 	[OP_PORTSC]		= 0x44U,
 	[OP_DEVLC]		= 0x84U,
 	[OP_OTGSC]		= 0x64U,
@@ -106,6 +107,7 @@ static const u8 ci_regs_lpm[] = {
 	[OP_USBINTR]		= 0x08U,
 	[OP_DEVICEADDR]		= 0x14U,
 	[OP_ENDPTLISTADDR]	= 0x18U,
+	[OP_BURSTSIZE]		= 0x20U,
 	[OP_PORTSC]		= 0x44U,
 	[OP_DEVLC]		= 0x84U,
 	[OP_OTGSC]		= 0xC4U,
@@ -412,6 +414,7 @@ static int ci_usb_phy_init(struct ci_hdrc *ci)
  */
 void ci_platform_config(struct ci_hdrc *ci, int usb_mode)
 {
+	u32 ahb_burst_config;
 	bool override_needed;
 
 	if (usb_mode == USBMODE_CM_DC) {
@@ -447,6 +450,22 @@ void ci_platform_config(struct ci_hdrc *ci, int usb_mode)
 	if (override_needed)
 		hw_write_id_reg(ci, ID_SBUSCFG, AHBBRST_MASK,
 			ci->platdata->ahbburst_config);
+
+	ahb_burst_config = hw_read_id_reg(ci, ID_SBUSCFG, AHBBRST_MASK);
+
+	/* Override tx burst size if needed */
+	override_needed = hw_read(ci, OP_BURSTSIZE, RX_BURST_MASK) !=
+			(ci->platdata->rx_burst_size & RX_BURST_MASK);
+	if (!ahb_burst_config && override_needed)
+		hw_write(ci, OP_BURSTSIZE, RX_BURST_MASK,
+			ci->platdata->rx_burst_size);
+
+	/* Override tx burst size if needed */
+	override_needed = ((hw_read(ci, OP_BURSTSIZE, TX_BURST_MASK) >>
+			__ffs(TX_BURST_MASK)) != ci->platdata->tx_burst_size);
+	if (!ahb_burst_config && override_needed)
+		hw_write(ci, OP_BURSTSIZE, TX_BURST_MASK,
+			ci->platdata->tx_burst_size << __ffs(TX_BURST_MASK));
 }
 
 /**
@@ -647,6 +666,26 @@ static int ci_get_platdata(struct device *dev,
 		if (ret) {
 			dev_err(dev,
 				"failed to get ahb-burst-config value\n");
+			return ret;
+		}
+	}
+
+	if (of_find_property(dev->of_node, "tx-burst-size-dword", NULL)) {
+		ret = of_property_read_u32(dev->of_node, "tx-burst-size-dword",
+			&platdata->tx_burst_size);
+		if (ret) {
+			dev_err(dev,
+				"failed to get tx-burst-size-dword value\n");
+			return ret;
+		}
+	}
+
+	if (of_find_property(dev->of_node, "rx-burst-size-dword", NULL)) {
+		ret = of_property_read_u32(dev->of_node, "rx-burst-size-dword",
+			&platdata->rx_burst_size);
+		if (ret) {
+			dev_err(dev,
+				"failed to get rx-burst-size-dword value\n");
 			return ret;
 		}
 	}

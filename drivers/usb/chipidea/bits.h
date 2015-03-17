@@ -56,6 +56,10 @@
 #define DEVICEADDR_USBADRA    BIT(24)
 #define DEVICEADDR_USBADR     (0x7FUL << 25)
 
+/* BURSTSIZE */
+#define RX_BURST_MASK		0xff
+#define TX_BURST_MASK		0xff00
+
 /* PORTSC */
 #define PORTSC_CCS            BIT(0)
 #define PORTSC_CSC            BIT(1)
